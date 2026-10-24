@@ -15,6 +15,7 @@
 #import <notify.h>
 #import <SystemConfiguration/SystemConfiguration.h>
 #import <objc/runtime.h>
+#import <os/log.h>
 
 #pragma mark - 全局
 
@@ -305,6 +306,11 @@ static BOOL INSProcessIsThermalMonitord(void) {
 }
 
 __attribute__((constructor)) static void insulation_init(void) {
+#ifdef APELIN_BUILD_ID
+    // Apelin 加载标记：confirm_loaded 以此行判断 dylib 是否进了 thermalmonitord
+    os_log_with_type(os_log_create("com.be-huge.insulation.rebuilt", "insulation"),
+                     OS_LOG_TYPE_DEFAULT, "ApelinLoaded %s", APELIN_BUILD_ID);
+#endif
     if (!INSProcessIsThermalMonitord()) return;
     InsulationFreqStart();
     insulationMarkProcessStart();
