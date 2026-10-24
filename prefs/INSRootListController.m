@@ -54,7 +54,7 @@ static NSString *INSInsulationPrefsPlistPath(void) {
         _valueLabel = [[UILabel alloc] init];
         _valueLabel.textAlignment = NSTextAlignmentRight;
         _valueLabel.font = [UIFont systemFontOfSize:17];
-        _valueLabel.textColor = [UIColor labelColor];
+        _valueLabel.textColor = [UIColor secondaryLabelColor];
         _valueLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self.contentView addSubview:_valueLabel];
         [NSLayoutConstraint activateConstraints:@[
@@ -223,7 +223,9 @@ static double INSReadBrightnessNits(void) {
     [d writeToFile:path atomically:YES];
 
     if ([key hasPrefix:@"thermal"]) INSPostApplyNotifications();
-    if ([key isEqualToString:@"thermalPowerMode"]) INSPostRestartNotifications();
+    // 不再为模式切换重启 thermalmonitord：
+    // runtimeState 通知会重新应用偏好，重启只会让频率读数短暂归零（显示成 "—"）
+
 }
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
