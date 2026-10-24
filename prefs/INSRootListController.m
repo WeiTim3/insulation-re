@@ -64,6 +64,19 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     }
     return self;
 }
+
+// PSStaticTextCell 会在布局时把标题重新描成灰色，这里每次布局后强制覆盖
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.textLabel.textColor = [UIColor labelColor];
+    self.valueLabel.textColor = [UIColor secondaryLabelColor];
+}
+
+- (void)refreshCellContentsWithSpecifier:(PSSpecifier *)specifier {
+    [super refreshCellContentsWithSpecifier:specifier];
+    self.textLabel.textColor = [UIColor labelColor];
+    self.valueLabel.textColor = [UIColor secondaryLabelColor];
+}
 @end
 
 static double INSReadBrightnessNits(void) {
