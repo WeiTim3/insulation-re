@@ -38,47 +38,6 @@ static NSString *INSInsulationPrefsPlistPath(void) {
 }
 
 
-#pragma mark - 自定义单元格：左侧标题 + 右侧数值
-
-@interface INSValueCell : PSTableCell
-@property (nonatomic, strong) UILabel *valueLabel;
-@end
-
-@implementation INSValueCell
-- (instancetype)initWithStyle:(UITableViewCellStyle)style
-              reuseIdentifier:(NSString *)reuseIdentifier
-                    specifier:(PSSpecifier *)specifier {
-    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier specifier:specifier];
-    if (self) {
-        self.textLabel.textColor = [UIColor labelColor];
-        _valueLabel = [[UILabel alloc] init];
-        _valueLabel.textAlignment = NSTextAlignmentRight;
-        _valueLabel.font = [UIFont systemFontOfSize:17];
-        _valueLabel.textColor = [UIColor secondaryLabelColor];
-        _valueLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        [self.contentView addSubview:_valueLabel];
-        [NSLayoutConstraint activateConstraints:@[
-            [_valueLabel.trailingAnchor constraintEqualToAnchor:self.contentView.layoutMarginsGuide.trailingAnchor],
-            [_valueLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor]
-        ]];
-    }
-    return self;
-}
-
-// PSStaticTextCell 会在布局时把标题重新描成灰色，这里每次布局后强制覆盖
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    self.textLabel.textColor = [UIColor labelColor];
-    self.valueLabel.textColor = [UIColor secondaryLabelColor];
-}
-
-- (void)refreshCellContentsWithSpecifier:(PSSpecifier *)specifier {
-    [super refreshCellContentsWithSpecifier:specifier];
-    self.textLabel.textColor = [UIColor labelColor];
-    self.valueLabel.textColor = [UIColor secondaryLabelColor];
-}
-@end
-
 static double INSReadBrightnessNits(void) {
     static id client = nil;
     static BOOL tried = NO;
@@ -137,11 +96,10 @@ static double INSReadBrightnessNits(void) {
         }
 
         PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"CPU 频率"];
-        self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
-        self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
-        self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
-        for (PSSpecifier *sp in @[self.freqPSpec, self.freqESpec, self.nitsSpec])
-            [sp setProperty:[INSValueCell class] forKey:@"cellClass"];
+        self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
+        self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
+        self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
+
         PSSpecifier *refresh = [PSSpecifier preferenceSpecifierNamed:@"刷新当前数据"
                                                               target:self
                                                                  set:NULL
@@ -165,6 +123,13 @@ static double INSReadBrightnessNits(void) {
     [self updateLiveValues];
 }
 
+- (void)setValue:(NSString *)text forSpecifier:(PSSpecifier *)spec {
+    if (!spec) return;
+    [spec setProperty:text forKey:@"value"];
+    UITableViewCell *cell = [self cachedCellForSpecifier:spec];
+    if (cell) cell.detailTextLabel.text = text;
+}
+
 - (void)updateLiveValues {
     int token = 0;
     unsigned p = 0, e = 0;
@@ -176,18 +141,11 @@ static double INSReadBrightnessNits(void) {
         }
         notify_cancel(token);
     }
+    [self setValue:(p ? [NSString stringWithFormat:@"%u MHz", p] : @"—") forSpecifier:self.freqPSpec];
+    [self setValue:(e ? [NSString stringWithFormat:@"%u MHz", e] : @"—") forSpecifier:self.freqESpec];
 
-    INSValueCell *pc = (INSValueCell *)[self cachedCellForSpecifier:self.freqPSpec];
-    INSValueCell *ec = (INSValueCell *)[self cachedCellForSpecifier:self.freqESpec];
-    INSValueCell *nc = (INSValueCell *)[self cachedCellForSpecifier:self.nitsSpec];
-    if ([pc isKindOfClass:[INSValueCell class]])
-        pc.valueLabel.text = p ? [NSString stringWithFormat:@"%u MHz", p] : @"—";
-    if ([ec isKindOfClass:[INSValueCell class]])
-        ec.valueLabel.text = e ? [NSString stringWithFormat:@"%u MHz", e] : @"—";
-    if ([nc isKindOfClass:[INSValueCell class]]) {
-        double nits = INSReadBrightnessNits();
-        nc.valueLabel.text = nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—";
-    }
+    double nits = INSReadBrightnessNits();
+    [self setValue:(nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—") forSpecifier:self.nitsSpec];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
