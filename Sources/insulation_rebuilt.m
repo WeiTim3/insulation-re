@@ -306,6 +306,7 @@ static BOOL INSProcessIsThermalMonitord(void) {
 
 __attribute__((constructor)) static void insulation_init(void) {
     if (!INSProcessIsThermalMonitord()) return;
+    InsulationFreqStart();
     insulationMarkProcessStart();
     InsulationRuntimeHooksInstall();
 

@@ -10,7 +10,7 @@ include $(THEOS)/makefiles/common.mk
 # 单一 dylib
 TWEAK_NAME = insulation
 insulation_FILES = Sources/insulation_rebuilt.m Sources/insulation_mitigation.m \
-                   Sources/insulation_cpu.m Sources/insulation_state.m Sources/insulation_plist.m
+                   Sources/insulation_cpu.m Sources/insulation_state.m Sources/insulation_plist.m Sources/insulation_freq.m
 insulation_FRAMEWORKS = Foundation CoreFoundation SystemConfiguration IOKit
 insulation_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-function
 insulation_LDFLAGS = -Wl,-undefined,dynamic_lookup

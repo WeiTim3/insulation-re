@@ -37,6 +37,8 @@ static NSString *INSInsulationPrefsPlistPath(void) {
 
 @interface RootListController : PSListController
 @property (nonatomic, weak) UIControl *cpuModeMenuOverlay;  // objc_storeWeak
+@property (nonatomic, strong) NSTimer *freqTimer;
+@property (nonatomic, strong) PSSpecifier *freqGroup;
 @end
 
 @implementation RootListController
@@ -47,9 +49,54 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     NSArray *s = [self valueForKey:@"_specifiers"];
     if (!s) {
         s = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:nil];
+        [g setProperty:@"实时频率：等待采样…" forKey:PSFooterTextGroupKey];
+        self.freqGroup = g;
+        s = [s arrayByAddingObject:g];
         [self setValue:s forKey:@"_specifiers"];
     }
     return s;
+}
+
+#pragma mark - 实时频率
+
+- (void)updateFreqFooter {
+    if (!self.freqGroup) return;
+    int token = 0;
+    if (notify_register_check("com.be-huge.insulation-freq", &token) != 0) return;
+    uint64_t st = 0;
+    notify_get_state(token, &st);
+    notify_cancel(token);
+
+    unsigned p = (unsigned)((st >> 16) & 0xFFFF);
+    unsigned e = (unsigned)(st & 0xFFFF);
+    NSString *txt;
+    if (!p && !e) {
+        txt = @"实时频率：等待采样…（需 thermalmonitord 运行）";
+    } else {
+        txt = [NSString stringWithFormat:@"P 核 %.2f GHz     E 核 %.2f GHz",
+                                         p / 1000.0, e / 1000.0];
+    }
+    [self.freqGroup setProperty:txt forKey:PSFooterTextGroupKey];
+    [self reloadSpecifier:self.freqGroup];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self updateFreqFooter];
+    if (!self.freqTimer) {
+        self.freqTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                         target:self
+                                                       selector:@selector(updateFreqFooter)
+                                                       userInfo:nil
+                                                        repeats:YES];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.freqTimer invalidate];
+    self.freqTimer = nil;
 }
 
 #pragma mark - 偏好读写
