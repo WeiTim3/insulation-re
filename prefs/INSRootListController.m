@@ -71,6 +71,29 @@ static double INSReadBrightnessNits(void) {
 
 #pragma mark - specifiers
 
+static const int kPTable[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
+                                2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
+static const int kETable[5] = {600, 816, 1200, 1584, 2016};
+
+- (void)currentValuesP:(NSString **)pOut E:(NSString **)eOut N:(NSString **)nOut {
+    int p = -1, e = -1;
+    int token = 0;
+    if (notify_register_check("com.be-huge.insulation-freq", &token) == 0) {
+        uint64_t st = 0;
+        if (notify_get_state(token, &st) == 0) {
+            p = (int)((st >> 16) & 0xFFFF);
+            e = (int)(st & 0xFFFF);
+        }
+        notify_cancel(token);
+    }
+    if (pOut) *pOut = p > 0 ? [NSString stringWithFormat:@"%d MHz", p] : @"—";
+    if (eOut) *eOut = e > 0 ? [NSString stringWithFormat:@"%d MHz", e] : @"—";
+    if (nOut) {
+        double nits = INSReadBrightnessNits();
+        *nOut = nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—";
+    }
+}
+
 - (NSArray *)specifiers {
     NSArray *s = [self valueForKey:@"_specifiers"];
     if (!s) {
@@ -98,11 +121,13 @@ static double INSReadBrightnessNits(void) {
         PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"CPU 频率"];
         self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
         self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
-        for (PSSpecifier *sp in @[self.freqPSpec, self.freqESpec])
-            [sp setProperty:@"—" forKey:@"value"];
+        NSString *pv = nil, *ev = nil, *nv = nil;
+        [self currentValuesP:&pv E:&ev N:&nv];
+        [self.freqPSpec setProperty:pv forKey:@"value"];
+        [self.freqESpec setProperty:ev forKey:@"value"];
         self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
 
-        [self.nitsSpec setProperty:@"—" forKey:@"value"];
+        [self.nitsSpec setProperty:nv forKey:@"value"];
         PSSpecifier *refresh = [PSSpecifier preferenceSpecifierNamed:@"刷新当前数据"
                                                               target:self
                                                                  set:NULL
@@ -140,21 +165,11 @@ static double INSReadBrightnessNits(void) {
 }
 
 - (void)updateLiveValues {
-    int token = 0;
-    unsigned p = 0, e = 0;
-    if (notify_register_check("com.be-huge.insulation-freq", &token) == 0) {
-        uint64_t st = 0;
-        if (notify_get_state(token, &st) == 0) {
-            p = (unsigned)((st >> 16) & 0xFFFF);
-            e = (unsigned)(st & 0xFFFF);
-        }
-        notify_cancel(token);
-    }
-    [self setValue:(p ? [NSString stringWithFormat:@"%u MHz", p] : @"—") forSpecifier:self.freqPSpec];
-    [self setValue:(e ? [NSString stringWithFormat:@"%u MHz", e] : @"—") forSpecifier:self.freqESpec];
-
-    double nits = INSReadBrightnessNits();
-    [self setValue:(nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—") forSpecifier:self.nitsSpec];
+    NSString *pv = nil, *ev = nil, *nv = nil;
+    [self currentValuesP:&pv E:&ev N:&nv];
+    [self setValue:pv forSpecifier:self.freqPSpec];
+    [self setValue:ev forSpecifier:self.freqESpec];
+    [self setValue:nv forSpecifier:self.nitsSpec];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
