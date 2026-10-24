@@ -123,9 +123,11 @@ static double INSReadBrightnessNits(void) {
         }
 
         PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"CPU 频率"];
-        self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
-        self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
-        self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
+        self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
+        self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
+        self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:PSStaticTextCell edit:NULL];
+        for (PSSpecifier *sp in @[self.freqPSpec, self.freqESpec, self.nitsSpec])
+            [sp setProperty:[INSValueCell class] forKey:@"cellClass"];
         PSSpecifier *refresh = [PSSpecifier preferenceSpecifierNamed:@"刷新当前数据"
                                                               target:self
                                                                  set:NULL
