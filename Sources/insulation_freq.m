@@ -179,6 +179,21 @@ static BOOL InsFreqSetup(void) {
     if (gPCount <= 0) gPCount = InsFreqLoadTable(np, gPTable, FREQ_MAX_STATES);
     gECount = InsFreqLoadTableByKey(1, ne, gETable, FREQ_MAX_STATES);
     if (gECount <= 0) gECount = InsFreqLoadTable(ne, gETable, FREQ_MAX_STATES);
+    // 校验：P 簇最高档必须高于 E 簇最高档，否则两张表装反了，交换
+    if (gPCount > 0 && gECount > 0) {
+        int pmax = 0, emax = 0;
+        for (int i = 0; i < gPCount; i++) if (gPTable[i] > pmax) pmax = gPTable[i];
+        for (int i = 0; i < gECount; i++) if (gETable[i] > emax) emax = gETable[i];
+        if (pmax < emax) {
+            int tmpT[FREQ_MAX_STATES];
+            int tmpC = gPCount;
+            memcpy(tmpT, gPTable, sizeof(int) * FREQ_MAX_STATES);
+            memcpy(gPTable, gETable, sizeof(int) * FREQ_MAX_STATES);
+            memcpy(gETable, tmpT, sizeof(int) * FREQ_MAX_STATES);
+            gPCount = gECount;
+            gECount = tmpC;
+        }
+    }
     // 取不到表就不上报该簇（设置页显示 "—"），不再用硬编码数值蒙
 
     gReady = YES;
