@@ -4,6 +4,8 @@
 #import <UIKit/UIKit.h>
 #import <Preferences/Preferences.h>
 #import <notify.h>
+#import <objc/message.h>
+#import <dlfcn.h>
 
 extern NSString *jbroot(NSString *path) __asm("__Z6jbrootP8NSString");
 
@@ -35,10 +37,61 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     return r.length ? r : p;
 }
 
+
+#pragma mark - 自定义单元格：左侧标题 + 右侧数值
+
+@interface INSValueCell : PSTableCell
+@property (nonatomic, strong) UILabel *valueLabel;
+@end
+
+@implementation INSValueCell
+- (instancetype)initWithStyle:(UITableViewCellStyle)style
+              reuseIdentifier:(NSString *)reuseIdentifier
+                    specifier:(PSSpecifier *)specifier {
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier specifier:specifier];
+    if (self) {
+        _valueLabel = [[UILabel alloc] init];
+        _valueLabel.textAlignment = NSTextAlignmentRight;
+        _valueLabel.font = [UIFont systemFontOfSize:17];
+        _valueLabel.textColor = [UIColor secondaryLabelColor];
+        _valueLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.contentView addSubview:_valueLabel];
+        [NSLayoutConstraint activateConstraints:@[
+            [_valueLabel.trailingAnchor constraintEqualToAnchor:self.contentView.layoutMarginsGuide.trailingAnchor],
+            [_valueLabel.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor]
+        ]];
+    }
+    return self;
+}
+@end
+
+static double INSReadBrightnessNits(void) {
+    static id client = nil;
+    static BOOL tried = NO;
+    if (!tried) {
+        tried = YES;
+        void *h = dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_LAZY);
+        Class c = h ? NSClassFromString(@"BrightnessSystemClient") : nil;
+        if (c) client = [[c alloc] init];
+    }
+    if (!client) return -1;
+    SEL sel = sel_registerName("copyPropertyForKey:");
+    id (*fn)(id, SEL, id) = (id (*)(id, SEL, id))objc_msgSend;
+    id val = fn(client, sel, @"DisplayBrightness");
+    if (![val isKindOfClass:[NSDictionary class]]) return -1;
+    id nits = ((NSDictionary *)val)[@"Nits"];
+    if (![nits isKindOfClass:[NSNumber class]]) {
+        nits = ((NSDictionary *)val)[@"NitsPhysical"];
+    }
+    return [nits isKindOfClass:[NSNumber class]] ? [nits doubleValue] : -1;
+}
+
 @interface RootListController : PSListController
 @property (nonatomic, weak) UIControl *cpuModeMenuOverlay;  // objc_storeWeak
 @property (nonatomic, strong) NSTimer *freqTimer;
-@property (nonatomic, strong) PSSpecifier *freqGroup;
+@property (nonatomic, strong) PSSpecifier *freqPSpec;
+@property (nonatomic, strong) PSSpecifier *freqESpec;
+@property (nonatomic, strong) PSSpecifier *nitsSpec;
 @end
 
 @implementation RootListController
@@ -49,49 +102,85 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     NSArray *s = [self valueForKey:@"_specifiers"];
     if (!s) {
         s = [self loadSpecifiersFromPlistName:@"Root" target:self];
-        // 把频率显示挂到第一组（CPU 模式所在组）的 footer 上
-        for (PSSpecifier *sp in s) {
+
+        NSMutableArray *out = [NSMutableArray arrayWithArray:s];
+        NSUInteger insertAt = out.count;
+        for (NSUInteger i = 0; i < out.count; i++) {
+            PSSpecifier *sp = out[i];
             id cell = [sp propertyForKey:@"cell"];
             if ([cell isEqual:NSClassFromString(@"PSGroupCell")] || [cell isEqual:@"PSGroupCell"]) {
-                self.freqGroup = sp;
-                [sp setProperty:@"实时频率：等待采样…" forKey:PSFooterTextGroupKey];
+                // 第一组（CPU 模式）结束后插入
+                insertAt = i + 1;
+                for (NSUInteger j = i + 1; j < out.count; j++) {
+                    id c2 = [out[j] propertyForKey:@"cell"];
+                    if ([c2 isEqual:NSClassFromString(@"PSGroupCell")] || [c2 isEqual:@"PSGroupCell"]) {
+                        insertAt = j;
+                        break;
+                    }
+                }
                 break;
             }
         }
+
+        PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"CPU 频率"];
+        self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
+        self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
+        self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:[INSValueCell class] edit:NULL];
+        PSSpecifier *refresh = [PSSpecifier preferenceSpecifierNamed:@"刷新当前数据"
+                                                              target:self
+                                                                 set:NULL
+                                                                 get:NULL
+                                                              detail:NULL
+                                                                cell:PSButtonCell
+                                                                edit:NULL];
+        refresh->action = @selector(refreshTapped:);
+
+        [out insertObjects:@[group, self.freqPSpec, self.freqESpec, self.nitsSpec, refresh]
+                 atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(insertAt, 5)]];
+        s = out;
         [self setValue:s forKey:@"_specifiers"];
     }
     return s;
 }
 
-#pragma mark - 实时频率
+#pragma mark - 数据刷新
 
-- (void)updateFreqFooter {
-    if (!self.freqGroup) return;
+- (void)refreshTapped:(id)sender {
+    [self updateLiveValues];
+}
+
+- (void)updateLiveValues {
     int token = 0;
-    if (notify_register_check("com.be-huge.insulation-freq", &token) != 0) return;
-    uint64_t st = 0;
-    notify_get_state(token, &st);
-    notify_cancel(token);
-
-    unsigned p = (unsigned)((st >> 16) & 0xFFFF);
-    unsigned e = (unsigned)(st & 0xFFFF);
-    NSString *txt;
-    if (!p && !e) {
-        txt = @"实时频率：等待采样…（需 thermalmonitord 运行）";
-    } else {
-        txt = [NSString stringWithFormat:@"P 核 %u MHz     E 核 %u MHz", p, e];
+    unsigned p = 0, e = 0;
+    if (notify_register_check("com.be-huge.insulation-freq", &token) == 0) {
+        uint64_t st = 0;
+        if (notify_get_state(token, &st) == 0) {
+            p = (unsigned)((st >> 16) & 0xFFFF);
+            e = (unsigned)(st & 0xFFFF);
+        }
+        notify_cancel(token);
     }
-    [self.freqGroup setProperty:txt forKey:PSFooterTextGroupKey];
-    [self reloadSpecifier:self.freqGroup];
+
+    INSValueCell *pc = (INSValueCell *)[self cachedCellForSpecifier:self.freqPSpec];
+    INSValueCell *ec = (INSValueCell *)[self cachedCellForSpecifier:self.freqESpec];
+    INSValueCell *nc = (INSValueCell *)[self cachedCellForSpecifier:self.nitsSpec];
+    if ([pc isKindOfClass:[INSValueCell class]])
+        pc.valueLabel.text = p ? [NSString stringWithFormat:@"%u MHz", p] : @"—";
+    if ([ec isKindOfClass:[INSValueCell class]])
+        ec.valueLabel.text = e ? [NSString stringWithFormat:@"%u MHz", e] : @"—";
+    if ([nc isKindOfClass:[INSValueCell class]]) {
+        double nits = INSReadBrightnessNits();
+        nc.valueLabel.text = nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—";
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [self updateFreqFooter];
+    [self updateLiveValues];
     if (!self.freqTimer) {
-        self.freqTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+        self.freqTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
                                                          target:self
-                                                       selector:@selector(updateFreqFooter)
+                                                       selector:@selector(updateLiveValues)
                                                        userInfo:nil
                                                         repeats:YES];
     }
