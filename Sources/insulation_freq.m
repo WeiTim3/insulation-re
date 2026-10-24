@@ -126,6 +126,11 @@ static int InsFreqLoadTableNamed(const char *onlyKey, int want, int *out, int ou
     return found;
 }
 
+// 不指定键名时：先 sram，再普通表，按条目数匹配
+static int InsFreqLoadTable(int want, int *out, int outMax) {
+    return InsFreqLoadTableNamed(NULL, want, out, outMax);
+}
+
 static BOOL InsFreqSetup(void) {
     if (gReady) return YES;
     void *h = dlopen("/usr/lib/libIOReport.dylib", RTLD_LAZY);
