@@ -74,8 +74,7 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     if (!p && !e) {
         txt = @"实时频率：等待采样…（需 thermalmonitord 运行）";
     } else {
-        txt = [NSString stringWithFormat:@"P 核 %.2f GHz     E 核 %.2f GHz",
-                                         p / 1000.0, e / 1000.0];
+        txt = [NSString stringWithFormat:@"P 核 %u MHz     E 核 %u MHz", p, e];
     }
     [self.freqGroup setProperty:txt forKey:PSFooterTextGroupKey];
     [self reloadSpecifier:self.freqGroup];
