@@ -48,7 +48,8 @@ typedef uint32_t (*FnEntryFromPath)(uint32_t, const char *);
 typedef int (*FnCreateProps)(uint32_t, CFMutableDictionaryRef *, CFAllocatorRef, uint32_t);
 typedef int (*FnObjectRelease)(uint32_t);
 
-static int InsFreqLoadTable(const int *skipCounts, int want, int *out, int outMax) {
+static int InsFreqLoadTable(int want, int *out, int outMax) {
+    if (want <= 0 || want > outMax) return 0;
     void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
     if (!iokit) return 0;
     FnEntryFromPath entryFromPath = (FnEntryFromPath)dlsym(iokit, "IORegistryEntryFromPath");
@@ -64,38 +65,44 @@ static int InsFreqLoadTable(const int *skipCounts, int want, int *out, int outMa
     release(entry);
     if (kr != 0 || !props) return 0;
 
-    int found = 0;
+    // 注意：CFDictionaryGetKeysAndValues 会写入全部条目，数组必须按真实条目数分配
     CFIndex n = CFDictionaryGetCount(props);
-    const void *keys[64], *vals[64];
-    if (n > 64) n = 64;
+    if (n <= 0) { CFRelease(props); return 0; }
+    const void **keys = calloc((size_t)n, sizeof(void *));
+    const void **vals = calloc((size_t)n, sizeof(void *));
+    if (!keys || !vals) { free((void *)keys); free((void *)vals); CFRelease(props); return 0; }
     CFDictionaryGetKeysAndValues(props, keys, vals);
 
-    // 先找 sram 表，再退回普通表
-    for (int pass = 0; pass < 2 && !found; pass++) {
+    int found = 0;
+    for (int pass = 0; pass < 2 && !found; pass++) {          // 先 sram，再普通表
         for (CFIndex i = 0; i < n; i++) {
-            const char *k = [(__bridge NSString *)keys[i] UTF8String];
-            if (!k || strncmp(k, "voltage-states", 14) != 0) continue;
-            BOOL isSram = strstr(k, "-sram") != NULL;
-            if (pass == 0 && !isSram) continue;
-            if (pass == 1 && isSram) continue;
+            if (!keys[i]) continue;
+            CFStringRef key = (CFStringRef)keys[i];
+            char kbuf[64] = {0};
+            if (!CFStringGetCString(key, kbuf, sizeof(kbuf), kCFStringEncodingUTF8)) continue;
+            if (strncmp(kbuf, "voltage-states", 14) != 0) continue;
+            BOOL isSram = strstr(kbuf, "-sram") != NULL;
+            if ((pass == 0) != (BOOL)isSram) continue;
 
             CFDataRef data = (CFDataRef)vals[i];
             if (!data || CFGetTypeID(data) != CFDataGetTypeID()) continue;
             CFIndex len = CFDataGetLength(data);
             int count = (int)(len / 8);
             if (count != want) continue;
-            if (skipCounts && count == skipCounts[0] && want == skipCounts[1]) continue;
 
             const uint8_t *b = CFDataGetBytePtr(data);
-            for (int j = 0; j < count && j < outMax; j++) {
+            if (!b) continue;
+            for (int j = 0; j < count; j++) {
                 uint32_t hz = 0;
                 memcpy(&hz, b + j * 8, 4);
-                out[j] = (int)((hz + 500000) / 1000000);   // Hz → MHz
+                out[j] = (int)((hz + 500000) / 1000000);
             }
             found = count;
             break;
         }
     }
+    free((void *)keys);
+    free((void *)vals);
     CFRelease(props);
     return found;
 }
@@ -144,8 +151,8 @@ static BOOL InsFreqSetup(void) {
     (void)probeP; (void)probeE;
 
     // 按状态数匹配档位表；失败用 A16 兜底
-    gPCount = InsFreqLoadTable(NULL, np, gPTable, FREQ_MAX_STATES);
-    gECount = InsFreqLoadTable(NULL, ne, gETable, FREQ_MAX_STATES);
+    gPCount = InsFreqLoadTable(np, gPTable, FREQ_MAX_STATES);
+    gECount = InsFreqLoadTable(ne, gETable, FREQ_MAX_STATES);
     // 取不到表就不上报该簇（设置页显示 "—"），不再用硬编码数值蒙
 
     gReady = YES;
