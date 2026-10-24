@@ -48,6 +48,9 @@ typedef uint32_t (*FnEntryFromPath)(uint32_t, const char *);
 typedef int (*FnCreateProps)(uint32_t, CFMutableDictionaryRef *, CFAllocatorRef, uint32_t);
 typedef int (*FnObjectRelease)(uint32_t);
 
+static int InsFreqLoadTableNamed(const char *onlyKey, int want, int *out, int outMax);
+static int InsFreqLoadTable(int want, int *out, int outMax);
+
 static int InsFreqLoadTableByKey(int index, int want, int *out, int outMax) {
     char keySram[64], keyPlain[64];
     snprintf(keySram, sizeof(keySram), "voltage-states%d-sram", index);
