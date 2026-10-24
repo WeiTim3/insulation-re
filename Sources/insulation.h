@@ -143,6 +143,4 @@ void   insulationResetHIP(void);
 #pragma mark - 频率采样（insulation_freq.m）
 
 void InsulationFreqStart(void);
-void InsulationFreqSample(void);
-int  InsulationFreqLastP(void);
-int  InsulationFreqLastE(void);
+int  InsulationFreqRead(int *pIdx, int *eIdx);

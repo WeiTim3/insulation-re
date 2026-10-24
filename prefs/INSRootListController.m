@@ -133,27 +133,30 @@ static double INSReadBrightnessNits(void) {
     [self reloadSpecifier:spec];   // 统一由列表按 value 重建，避免 detailTextLabel 为 nil
 }
 
+static const int kPTable[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
+                                2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
+static const int kETable[5] = {600, 816, 1200, 1584, 2016};
+
 - (void)updateLiveValues {
+    int p = -1, e = -1;
     int token = 0;
-    unsigned p = 0, e = 0;
-    if (notify_register_check("com.be-huge.insulation-freq", &token) == 0) {
+    if (notify_register_check("com.be-huge.insulation.freqstate", &token) == 0) {
         uint64_t st = 0;
-        if (notify_get_state(token, &st) == 0) {
-            p = (unsigned)((st >> 16) & 0xFFFF);
-            e = (unsigned)(st & 0xFFFF);
+        if (notify_get_state(token, &st) == 0 && (uint32_t)(st >> 32) == 0x46524551U) {
+            int pi = (int)((st >> 8) & 0xFF);
+            int ei = (int)(st & 0xFF);
+            if (pi != 0xFF) p = pi;
+            if (ei != 0xFF) e = ei;
         }
         notify_cancel(token);
     }
-    [self setValue:(p ? [NSString stringWithFormat:@"%u MHz", p] : @"—") forSpecifier:self.freqPSpec];
-    [self setValue:(e ? [NSString stringWithFormat:@"%u MHz", e] : @"—") forSpecifier:self.freqESpec];
+
+    NSString *ptxt = (p >= 0 && p < 17) ? [NSString stringWithFormat:@"%d MHz", kPTable[p]] : @"—";
+    NSString *etxt = (e >= 0 && e < 5)  ? [NSString stringWithFormat:@"%d MHz", kETable[e]] : @"—";
+    [self setValue:ptxt forSpecifier:self.freqPSpec];
+    [self setValue:etxt forSpecifier:self.freqESpec];
 
     double nits = INSReadBrightnessNits();
-    @try {
-        NSString *dbg = [NSString stringWithFormat:@"P=%@ E=%@ N=%.0f\n",
-                         [self.freqPSpec propertyForKey:@"value"],
-                         [self.freqESpec propertyForKey:@"value"], nits];
-        [dbg writeToFile:@"/tmp/ins_ui_debug.txt" atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-    } @catch (NSException *e) {}
     [self setValue:(nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—") forSpecifier:self.nitsSpec];
 }
 
