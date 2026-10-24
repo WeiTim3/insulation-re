@@ -202,7 +202,7 @@ static BOOL InsFreqSetup(void) {
 
 static void InsFreqReadCounters(uint64_t *pOut, uint64_t *eOut, BOOL *gotPOut, BOOL *gotEOut) {
     CFDictionaryRef s = fCreateSamples(gSubRef, gSubbed, NULL);
-    if (!s) return NO;
+    if (!s) { if (gotPOut) *gotPOut = NO; if (gotEOut) *gotEOut = NO; return; }
     BOOL gotP = NO, gotE = NO;
     CFArrayRef chans = CFDictionaryGetValue(s, CFSTR("IOReportChannels"));
     if (chans) {
