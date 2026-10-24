@@ -146,16 +146,30 @@ static void r_setPackagePowerZoneTarget(id self, SEL _cmd) {
 #pragma mark - 周期性 update
 
 // 先记下 MitigationController 实例，再放行
+// initForFastLoop:noDisplay:powerSaveParams:powerZoneParams:  @40@0:8B16B20@24@32
+//   idle 时 updateCPU 可能长时间不被调用，控制器引用必须在这里就抓住
+static IMP o_mcInitForFastLoop;
+static id r_mcInitForFastLoop(id self, SEL _cmd, BOOL fast, BOOL noDisplay, id powerSaveParams, id powerZoneParams) {
+    if (o_mcInitForFastLoop) {
+        id r = ((id (*)(id, SEL, BOOL, BOOL, id, id))o_mcInitForFastLoop)(self, _cmd, fast, noDisplay, powerSaveParams, powerZoneParams);
+        InsulationSetMitigationControllerObject(self);
+        return r;
+    }
+    return self;
+}
+
 static void r_updateCPU(id self, SEL _cmd) {
     InsulationSetMitigationControllerObject(self);
     if (o_updateCPU) ((void (*)(id, SEL))o_updateCPU)(self, _cmd);
 }
 
 static void r_updateGPU(id self, SEL _cmd) {
+    InsulationSetMitigationControllerObject(self);
     if (o_updateGPU) ((void (*)(id, SEL))o_updateGPU)(self, _cmd);
 }
 
 static void r_updatePackage(id self, SEL _cmd) {
+    InsulationSetMitigationControllerObject(self);
     if (o_updatePackage) ((void (*)(id, SEL))o_updatePackage)(self, _cmd);
 }
 
@@ -487,6 +501,8 @@ void InsulationInstallMitigationHooks(Class mc) {
     hookOne(mc, @selector(setMaxPackagePower:),                    (IMP)r_setMaxPackagePower,        &o_setMaxPackagePower);
     hookOne(mc, @selector(setPackageLowPowerTarget),               (IMP)r_setPackageLowPowerTarget,  &o_setPackageLowPowerTarget);
     hookOne(mc, @selector(setPackagePowerZoneTarget),              (IMP)r_setPackagePowerZoneTarget, &o_setPackagePowerZoneTarget);
+    hookOne(mc, @selector(initForFastLoop:noDisplay:powerSaveParams:powerZoneParams:),
+            (IMP)r_mcInitForFastLoop, &o_mcInitForFastLoop);
     hookOne(mc, @selector(updateCPU),                              (IMP)r_updateCPU,                 &o_updateCPU);
     hookOne(mc, @selector(updateGPU),                              (IMP)r_updateGPU,                 &o_updateGPU);
     hookOne(mc, @selector(updatePackage),                          (IMP)r_updatePackage,             &o_updatePackage);
