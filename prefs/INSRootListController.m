@@ -128,15 +128,9 @@ static double INSReadBrightnessNits(void) {
 
 - (void)setValue:(NSString *)text forSpecifier:(PSSpecifier *)spec {
     if (!spec || !text) return;
-    BOOL changed = ![[spec propertyForKey:@"value"] isEqual:text];
+    if ([[spec propertyForKey:@"value"] isEqual:text]) return;
     [spec setProperty:text forKey:@"value"];
-    UITableViewCell *cell = [self cachedCellForSpecifier:spec];
-    if (cell) {
-        cell.detailTextLabel.text = text;
-    } else if (changed) {
-        // 首次进入时 cell 还没创建，让列表按 value 重建这一行
-        [self reloadSpecifier:spec];
-    }
+    [self reloadSpecifier:spec];   // 统一由列表按 value 重建，避免 detailTextLabel 为 nil
 }
 
 - (void)updateLiveValues {
@@ -154,6 +148,12 @@ static double INSReadBrightnessNits(void) {
     [self setValue:(e ? [NSString stringWithFormat:@"%u MHz", e] : @"—") forSpecifier:self.freqESpec];
 
     double nits = INSReadBrightnessNits();
+    @try {
+        NSString *dbg = [NSString stringWithFormat:@"P=%@ E=%@ N=%.0f\n",
+                         [self.freqPSpec propertyForKey:@"value"],
+                         [self.freqESpec propertyForKey:@"value"], nits];
+        [dbg writeToFile:@"/tmp/ins_ui_debug.txt" atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    } @catch (NSException *e) {}
     [self setValue:(nits > 0 ? [NSString stringWithFormat:@"%.0f nits", nits] : @"—") forSpecifier:self.nitsSpec];
 }
 
