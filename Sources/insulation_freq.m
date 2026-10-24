@@ -41,6 +41,7 @@ static uint64_t gPrevP[17];
 static uint64_t gPrevE[5];
 static BOOL gHavePrev;
 static int gLastP, gLastE;
+static dispatch_source_t gFreqTimer;   // ARC：必须强引用，否则定时器被释放
 
 static BOOL InsFreqSetup(void) {
     if (gReady) return YES;
@@ -136,7 +137,8 @@ void InsulationFreqStart(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         dispatch_queue_t q = dispatch_queue_create("com.be-huge.insulation.freq", NULL);
-        dispatch_source_t t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
+        gFreqTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
+        dispatch_source_t t = gFreqTimer;
         dispatch_source_set_timer(t,
                                   dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
                                   NSEC_PER_SEC, 50 * NSEC_PER_MSEC);
