@@ -244,7 +244,7 @@ static int InsFreqWeighted(const uint64_t *prev, const uint64_t *cur,
     return (int)(sum / tot + 0.5);
 }
 
-void InsulationFreqSample(void) {
+static void InsulationFreqSample(void) {
     if (!InsFreqSetup()) return;
     uint64_t p[FREQ_MAX_STATES] = {0}, e[FREQ_MAX_STATES] = {0};
     BOOL haveP = NO, haveE = NO;
@@ -285,5 +285,5 @@ void InsulationFreqStart(void) {
     });
 }
 
-int InsulationFreqLastP(void) { return gLastP; }
-int InsulationFreqLastE(void) { return gLastE; }
+static int InsulationFreqLastP(void) { return gLastP; }
+static int InsulationFreqLastE(void) { return gLastE; }
