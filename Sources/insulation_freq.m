@@ -140,8 +140,8 @@ void InsulationFreqStart(void) {
         gFreqTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
         dispatch_source_t t = gFreqTimer;
         dispatch_source_set_timer(t,
-                                  dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
-                                  NSEC_PER_SEC, 50 * NSEC_PER_MSEC);
+                                  dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+                                  2 * NSEC_PER_SEC, 100 * NSEC_PER_MSEC);
         dispatch_source_set_event_handler(t, ^{ InsulationFreqSample(); });
         dispatch_resume(t);
     });
