@@ -71,10 +71,6 @@ static double INSReadBrightnessNits(void) {
 
 #pragma mark - specifiers
 
-static const int kPTable[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
-                                2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
-static const int kETable[5] = {600, 816, 1200, 1584, 2016};
-
 - (void)currentValuesP:(NSString **)pOut E:(NSString **)eOut N:(NSString **)nOut {
     int p = -1, e = -1;
     int token = 0;
