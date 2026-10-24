@@ -50,10 +50,11 @@ static NSString *INSInsulationPrefsPlistPath(void) {
                     specifier:(PSSpecifier *)specifier {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier specifier:specifier];
     if (self) {
+        self.textLabel.textColor = [UIColor labelColor];
         _valueLabel = [[UILabel alloc] init];
         _valueLabel.textAlignment = NSTextAlignmentRight;
         _valueLabel.font = [UIFont systemFontOfSize:17];
-        _valueLabel.textColor = [UIColor secondaryLabelColor];
+        _valueLabel.textColor = [UIColor labelColor];
         _valueLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self.contentView addSubview:_valueLabel];
         [NSLayoutConstraint activateConstraints:@[
@@ -350,8 +351,15 @@ static double INSReadBrightnessNits(void) {
     NSInteger i = sender.tag;
     if (i < 0 || i >= (NSInteger)values.count) return;  // -
     [self insulation_writePreferenceValue:values[i] forKey:@"thermalPowerMode"];
-    [self dismissCPUModeMenu];  // 先关
-    [self reloadSpecifiers];  // 再刷新
+    [self dismissCPUModeMenu];
+
+    // 只刷新「CPU 模式」这一行，避免整页重建（会闪一下、滚动位置也会跳）
+    PSSpecifier *modeSpec = nil;
+    for (PSSpecifier *sp in [self specifiers]) {
+        if ([[sp propertyForKey:@"key"] isEqualToString:@"thermalPowerMode"]) { modeSpec = sp; break; }
+    }
+    if (modeSpec) [self reloadSpecifier:modeSpec];
+    else [self reloadSpecifiers];
 }
 
 - (void)dismissCPUModeMenu {
