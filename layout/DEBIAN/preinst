@@ -1,0 +1,15 @@
+#!/bin/sh
+# 清掉旧 bundle / 入口，避免 dpkg 之外的残留或缓存导致 Settings 加载旧代码
+for B in /Library/PreferenceBundles/InsulationPrefs.bundle \
+         /var/jb/Library/PreferenceBundles/InsulationPrefs.bundle \
+         /Library/PreferenceBundles/InsulationFreqPrefs.bundle \
+         /var/jb/Library/PreferenceBundles/InsulationFreqPrefs.bundle; do
+    [ -d "$B" ] && rm -rf "$B"
+done
+for P in /Library/PreferenceLoader/Preferences/InsulationPrefs.plist \
+         /var/jb/Library/PreferenceLoader/Preferences/InsulationPrefs.plist \
+         /Library/PreferenceLoader/Preferences/InsulationFreq.plist \
+         /var/jb/Library/PreferenceLoader/Preferences/InsulationFreq.plist; do
+    [ -f "$P" ] && rm -f "$P"
+done
+exit 0

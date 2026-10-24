@@ -1,0 +1,59 @@
+name: build-deb
+
+on:
+  workflow_dispatch:   # 手动触发：由用户决定何时编译
+
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        scheme: [rootless]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          brew install ldid xz
+
+      - name: 配置 Theos + iOS SDK
+        run: |
+          # 必须带 submodule：dm.pl / logos 都在 vendor 下
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          mkdir -p "$HOME/theos/sdks"
+          curl -L -o /tmp/sdk.tar.gz https://github.com/theos/sdks/archive/refs/heads/master.tar.gz
+          tar xzf /tmp/sdk.tar.gz -C /tmp
+          mv /tmp/sdks-master/iPhoneOS16.5.sdk "$HOME/theos/sdks/"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          test -x "$HOME/theos/bin/dm.pl" && echo "dm.pl OK"
+
+      - name: 编译 (${{ matrix.scheme }})
+        run: |
+          if [ "${{ matrix.scheme }}" = "default" ]; then
+            make package FINALPACKAGE=1 DEBUG=0 PACKAGE_BUILDNAME=ci
+          else
+            make package THEOS_PACKAGE_SCHEME=${{ matrix.scheme }} FINALPACKAGE=1 DEBUG=0 PACKAGE_BUILDNAME=ci
+          fi
+
+      - name: 校验切片
+        run: |
+          echo "--- 产物 ---"
+          ls -lh packages/ || true
+          echo "--- 切片 ---"
+          find .theos/obj -name '*.dylib' -o -name 'InsulationPrefs' -type f 2>/dev/null | while read f; do echo "$f"; lipo -info "$f"; done
+
+      - name: 上传 deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.scheme }}
+          path: packages/*.deb
+          if-no-files-found: error
+
+      - name: 失败时导出日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.scheme }}
+          path: .theos/obj/**/*.log
+          if-no-files-found: ignore

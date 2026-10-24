@@ -1,0 +1,12 @@
+Package: com.be-huge.insulation.rebuilt
+Name: insulation
+Version: 0.1.36-107
+Architecture: iphoneos-arm
+Description: 三档 CPU 模式（原生/模拟低电/防止降频）、防止温控暗屏、禁温度计弹窗、禁用口袋高温、锁定阳光暴晒。
+Maintainer: be-huge
+Author: be-huge & doimty
+Section: Tweaks
+Depends: firmware (>= 15.0), preferenceloader
+Replaces: com.be-huge.insulation
+Conflicts: com.be-huge.insulation
+Provides: com.be-huge.insulation

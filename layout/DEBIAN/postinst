@@ -1,0 +1,8 @@
+#!/bin/sh
+# 1) 重启 thermalmonitord，让 dylib 重新加载
+/bin/launchctl kickstart -k user/foreground/com.apple.thermalmonitord 2>/dev/null \
+  || /usr/bin/launchctl kickstart -k user/foreground/com.apple.thermalmonitord 2>/dev/null || true
+[ -x /usr/bin/killall ] && /usr/bin/killall -9 thermalmonitord 2>/dev/null || true
+[ -x /usr/bin/killall ] && /usr/bin/killall -9 Preferences 2>/dev/null || true
+
+exit 0
