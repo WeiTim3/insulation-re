@@ -49,10 +49,15 @@ static NSString *INSInsulationPrefsPlistPath(void) {
     NSArray *s = [self valueForKey:@"_specifiers"];
     if (!s) {
         s = [self loadSpecifiersFromPlistName:@"Root" target:self];
-        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:nil];
-        [g setProperty:@"实时频率：等待采样…" forKey:PSFooterTextGroupKey];
-        self.freqGroup = g;
-        s = [s arrayByAddingObject:g];
+        // 把频率显示挂到第一组（CPU 模式所在组）的 footer 上
+        for (PSSpecifier *sp in s) {
+            id cell = [sp propertyForKey:@"cell"];
+            if ([cell isEqual:NSClassFromString(@"PSGroupCell")] || [cell isEqual:@"PSGroupCell"]) {
+                self.freqGroup = sp;
+                [sp setProperty:@"实时频率：等待采样…" forKey:PSFooterTextGroupKey];
+                break;
+            }
+        }
         [self setValue:s forKey:@"_specifiers"];
     }
     return s;
