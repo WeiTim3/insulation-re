@@ -19,10 +19,14 @@
 
 #define FREQ_NOTIFY_NAME "com.be-huge.insulation-freq"
 
-// A16 (iPhone15,3) 出厂档位表
-static const int kPTable[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
-                                2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
-static const int kETable[5] = {600, 816, 1200, 1584, 2016};
+// 兜底档位表（A16 出厂值）；运行时优先从 IORegistry 读
+static const int kPDefault[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
+                                  2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
+static const int kEDefault[5] = {600, 816, 1200, 1584, 2016};
+
+#define FREQ_MAX_STATES 32
+static int gPTable[FREQ_MAX_STATES]; static int gPCount;
+static int gETable[FREQ_MAX_STATES]; static int gECount;
 
 typedef void *(*FnCopyChannelsInGroup)(CFStringRef, CFStringRef, uint64_t, uint64_t, uint64_t);
 typedef void *(*FnCreateSubscription)(void *, CFMutableDictionaryRef, CFMutableDictionaryRef *, uint64_t, void *);
@@ -37,11 +41,68 @@ static CFMutableDictionaryRef gSubbed;
 static BOOL gReady;
 static int gToken = -1;
 
-static uint64_t gPrevP[17];
-static uint64_t gPrevE[5];
+static uint64_t gPrevP[FREQ_MAX_STATES];
+static uint64_t gPrevE[FREQ_MAX_STATES];
 static BOOL gHavePrev;
 static int gLastP, gLastE;
 static dispatch_source_t gFreqTimer;   // ARC：必须强引用，否则定时器被释放
+
+// 从 IORegistry 读 voltage-states*-sram，按条目数匹配 cluster 的状态数
+typedef uint32_t (*FnEntryFromPath)(uint32_t, const char *);
+typedef int (*FnCreateProps)(uint32_t, CFMutableDictionaryRef *, CFAllocatorRef, uint32_t);
+typedef int (*FnObjectRelease)(uint32_t);
+
+static int InsFreqLoadTable(const int *skipCounts, int want, int *out, int outMax) {
+    void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
+    if (!iokit) return 0;
+    FnEntryFromPath entryFromPath = (FnEntryFromPath)dlsym(iokit, "IORegistryEntryFromPath");
+    FnCreateProps createProps = (FnCreateProps)dlsym(iokit, "IORegistryEntryCreateCFProperties");
+    FnObjectRelease release = (FnObjectRelease)dlsym(iokit, "IOObjectRelease");
+    if (!entryFromPath || !createProps || !release) return 0;
+
+    uint32_t entry = entryFromPath(0, "IODeviceTree:/arm-io/pmgr");
+    if (!entry) return 0;
+
+    CFMutableDictionaryRef props = NULL;
+    int kr = createProps(entry, &props, NULL, 0);
+    release(entry);
+    if (kr != 0 || !props) return 0;
+
+    int found = 0;
+    CFIndex n = CFDictionaryGetCount(props);
+    const void *keys[64], *vals[64];
+    if (n > 64) n = 64;
+    CFDictionaryGetKeysAndValues(props, keys, vals);
+
+    // 先找 sram 表，再退回普通表
+    for (int pass = 0; pass < 2 && !found; pass++) {
+        for (CFIndex i = 0; i < n; i++) {
+            const char *k = [(__bridge NSString *)keys[i] UTF8String];
+            if (!k || strncmp(k, "voltage-states", 14) != 0) continue;
+            BOOL isSram = strstr(k, "-sram") != NULL;
+            if (pass == 0 && !isSram) continue;
+            if (pass == 1 && isSram) continue;
+
+            CFDataRef data = (CFDataRef)vals[i];
+            if (!data || CFGetTypeID(data) != CFDataGetTypeID()) continue;
+            CFIndex len = CFDataGetLength(data);
+            int count = (int)(len / 8);
+            if (count != want) continue;
+            if (skipCounts && count == skipCounts[0] && want == skipCounts[1]) continue;
+
+            const uint8_t *b = CFDataGetBytePtr(data);
+            for (int j = 0; j < count && j < outMax; j++) {
+                uint32_t hz = 0;
+                memcpy(&hz, b + j * 8, 4);
+                out[j] = (int)((hz + 500000) / 1000000);   // Hz → MHz
+            }
+            found = count;
+            break;
+        }
+    }
+    CFRelease(props);
+    return found;
+}
 
 static BOOL InsFreqSetup(void) {
     if (gReady) return YES;
@@ -60,6 +121,43 @@ static BOOL InsFreqSetup(void) {
     if (!gSubRef) return NO;
     gSubbed = subbed;
     notify_register_check(FREQ_NOTIFY_NAME, &gToken);
+
+    // 先探一次，拿到两个 cluster 的状态数
+    uint64_t probeP[FREQ_MAX_STATES] = {0}, probeE[FREQ_MAX_STATES] = {0};
+    int np = 0, ne = 0;
+    {
+        CFDictionaryRef s0 = fCreateSamples(gSubRef, gSubbed, NULL);
+        if (s0) {
+            CFArrayRef chans = CFDictionaryGetValue(s0, CFSTR("IOReportChannels"));
+            if (chans) {
+                CFIndex cn = CFArrayGetCount(chans);
+                for (CFIndex i = 0; i < cn; i++) {
+                    CFDictionaryRef c = CFArrayGetValueAtIndex(chans, i);
+                    CFStringRef sg = CFDictionaryGetValue(c, CFSTR("IOReportSubGroupName"));
+                    if (!sg || CFStringCompare(sg, CFSTR("CPU Complex Voltage States"), 0) != kCFCompareEqualTo) continue;
+                    CFDataRef raw = CFDictionaryGetValue(c, CFSTR("RawElements"));
+                    if (!raw) continue;
+                    int cnt = (int)(CFDataGetLength(raw) / 64);
+                    if (cnt > np && cnt >= 8) np = cnt;        // P 核档位多
+                    else if (cnt > ne && cnt < 8) ne = cnt;    // E 核档位少
+                }
+            }
+            CFRelease(s0);
+        }
+    }
+    (void)probeP; (void)probeE;
+
+    // 按状态数匹配档位表；失败用 A16 兜底
+    gPCount = InsFreqLoadTable(NULL, np, gPTable, FREQ_MAX_STATES);
+    if (gPCount <= 0) {
+        gPCount = 17;
+        memcpy(gPTable, kPDefault, sizeof(kPDefault));
+    }
+    gECount = InsFreqLoadTable(NULL, ne, gETable, FREQ_MAX_STATES);
+    if (gECount <= 0) {
+        gECount = 5;
+        memcpy(gETable, kEDefault, sizeof(kEDefault));
+    }
     gReady = YES;
     return YES;
 }
@@ -80,13 +178,12 @@ static BOOL InsFreqReadCounters(uint64_t *pOut, uint64_t *eOut) {
             if (!raw) continue;
             CFIndex len = CFDataGetLength(raw);
             const uint8_t *b = CFDataGetBytePtr(raw);
-            if (len == 17 * 64 && !gotP) {
-                for (int k = 0; k < 17; k++)
-                    memcpy(&pOut[k], b + k * 64 + 0x30, 8);
+            int cnt = (int)(len / 64);
+            if (cnt == gPCount && !gotP) {
+                for (int k = 0; k < cnt; k++) memcpy(&pOut[k], b + k * 64 + 0x30, 8);
                 gotP = YES;
-            } else if (len == 5 * 64 && !gotE) {
-                for (int k = 0; k < 5; k++)
-                    memcpy(&eOut[k], b + k * 64 + 0x30, 8);
+            } else if (cnt == gECount && !gotE) {
+                for (int k = 0; k < cnt; k++) memcpy(&eOut[k], b + k * 64 + 0x30, 8);
                 gotE = YES;
             }
         }
@@ -110,19 +207,19 @@ static int InsFreqWeighted(const uint64_t *prev, const uint64_t *cur,
 
 void InsulationFreqSample(void) {
     if (!InsFreqSetup()) return;
-    uint64_t p[17] = {0}, e[5] = {0};
+    uint64_t p[FREQ_MAX_STATES] = {0}, e[FREQ_MAX_STATES] = {0};
     if (!InsFreqReadCounters(p, e)) return;
 
     if (!gHavePrev) {
-        memcpy(gPrevP, p, sizeof(p));
-        memcpy(gPrevE, e, sizeof(e));
+        memcpy(gPrevP, p, sizeof(uint64_t) * FREQ_MAX_STATES);
+        memcpy(gPrevE, e, sizeof(uint64_t) * FREQ_MAX_STATES);
         gHavePrev = YES;
         return;
     }
-    int pm = InsFreqWeighted(gPrevP, p, 17, kPTable, gLastP);
-    int em = InsFreqWeighted(gPrevE, e, 5, kETable, gLastE);
-    memcpy(gPrevP, p, sizeof(p));
-    memcpy(gPrevE, e, sizeof(e));
+    int pm = InsFreqWeighted(gPrevP, p, gPCount, gPTable, gLastP);
+    int em = InsFreqWeighted(gPrevE, e, gECount, gETable, gLastE);
+    memcpy(gPrevP, p, sizeof(uint64_t) * FREQ_MAX_STATES);
+    memcpy(gPrevE, e, sizeof(uint64_t) * FREQ_MAX_STATES);
 
     if (pm > 0) gLastP = pm;
     if (em > 0) gLastE = em;
