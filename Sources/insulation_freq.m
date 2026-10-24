@@ -19,11 +19,7 @@
 
 #define FREQ_NOTIFY_NAME "com.be-huge.insulation-freq"
 
-// 兜底档位表（A16 出厂值）；运行时优先从 IORegistry 读
-static const int kPDefault[17] = {636, 924, 1176, 1428, 1680, 1920, 2100, 2280,
-                                  2460, 2640, 2820, 2940, 3060, 3180, 3300, 3420, 3468};
-static const int kEDefault[5] = {600, 816, 1200, 1584, 2016};
-
+// 档位表一律运行时从 IORegistry 读取，不做机型硬编码兜底
 #define FREQ_MAX_STATES 32
 static int gPTable[FREQ_MAX_STATES]; static int gPCount;
 static int gETable[FREQ_MAX_STATES]; static int gECount;
@@ -149,15 +145,9 @@ static BOOL InsFreqSetup(void) {
 
     // 按状态数匹配档位表；失败用 A16 兜底
     gPCount = InsFreqLoadTable(NULL, np, gPTable, FREQ_MAX_STATES);
-    if (gPCount <= 0) {
-        gPCount = 17;
-        memcpy(gPTable, kPDefault, sizeof(kPDefault));
-    }
     gECount = InsFreqLoadTable(NULL, ne, gETable, FREQ_MAX_STATES);
-    if (gECount <= 0) {
-        gECount = 5;
-        memcpy(gETable, kEDefault, sizeof(kEDefault));
-    }
+    // 取不到表就不上报该簇（设置页显示 "—"），不再用硬编码数值蒙
+
     gReady = YES;
     return YES;
 }
