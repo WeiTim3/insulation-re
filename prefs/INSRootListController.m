@@ -98,8 +98,11 @@ static double INSReadBrightnessNits(void) {
         PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"CPU 频率"];
         self.freqPSpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 大核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
         self.freqESpec  = [PSSpecifier preferenceSpecifierNamed:@"CPU 小核频率" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
+        for (PSSpecifier *sp in @[self.freqPSpec, self.freqESpec])
+            [sp setProperty:@"—" forKey:@"value"];
         self.nitsSpec   = [PSSpecifier preferenceSpecifierNamed:@"屏幕当前亮度" target:self set:NULL get:NULL detail:NULL cell:PSTitleValueCell edit:NULL];
 
+        [self.nitsSpec setProperty:@"—" forKey:@"value"];
         PSSpecifier *refresh = [PSSpecifier preferenceSpecifierNamed:@"刷新当前数据"
                                                               target:self
                                                                  set:NULL
@@ -124,10 +127,16 @@ static double INSReadBrightnessNits(void) {
 }
 
 - (void)setValue:(NSString *)text forSpecifier:(PSSpecifier *)spec {
-    if (!spec) return;
+    if (!spec || !text) return;
+    BOOL changed = ![[spec propertyForKey:@"value"] isEqual:text];
     [spec setProperty:text forKey:@"value"];
     UITableViewCell *cell = [self cachedCellForSpecifier:spec];
-    if (cell) cell.detailTextLabel.text = text;
+    if (cell) {
+        cell.detailTextLabel.text = text;
+    } else if (changed) {
+        // 首次进入时 cell 还没创建，让列表按 value 重建这一行
+        [self reloadSpecifier:spec];
+    }
 }
 
 - (void)updateLiveValues {
@@ -151,6 +160,8 @@ static double INSReadBrightnessNits(void) {
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self updateLiveValues];
+    for (PSSpecifier *sp in @[self.freqPSpec, self.freqESpec, self.nitsSpec])
+        if (sp) [self reloadSpecifier:sp];
     if (!self.freqTimer) {
         self.freqTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
                                                          target:self
