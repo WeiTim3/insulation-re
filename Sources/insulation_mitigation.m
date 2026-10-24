@@ -305,7 +305,8 @@ static void r_setThermalState(id self, SEL _cmd, int state) {
 // 真实签名是 v24@0:8@16 —— 参数是对象（BOOL 包成 NSNumber 或 nil），不是 C BOOL
 static void r_thermalUpdatesToWatchdogEnabled(id self, SEL _cmd, id enabled) {
     if (!o_thermalUpdatesToWatchdogEnabled) return;
-    id v = InsulationAggressiveFullPowerEnabled() ? nil : enabled;
+    // 原版在激进模式下把参数替换成一个 false 对象（非 nil），这里保持一致
+    id v = InsulationAggressiveFullPowerEnabled() ? (id)kCFBooleanFalse : enabled;
     ORIG1(o_thermalUpdatesToWatchdogEnabled, void, id)(self, _cmd, v);
 }
 
