@@ -13,6 +13,7 @@
 
 #import "insulation.h"
 #import <notify.h>
+#import <objc/message.h>
 #include <string.h>
 
 #define kFreqStateName "com.be-huge.insulation.freqstate"
