@@ -48,7 +48,19 @@ typedef uint32_t (*FnEntryFromPath)(uint32_t, const char *);
 typedef int (*FnCreateProps)(uint32_t, CFMutableDictionaryRef *, CFAllocatorRef, uint32_t);
 typedef int (*FnObjectRelease)(uint32_t);
 
-static int InsFreqLoadTable(int want, int *out, int outMax) {
+static int InsFreqLoadTableByKey(int index, int want, int *out, int outMax) {
+    char keySram[64], keyPlain[64];
+    snprintf(keySram, sizeof(keySram), "voltage-states%d-sram", index);
+    snprintf(keyPlain, sizeof(keyPlain), "voltage-states%d", index);
+    for (int pass = 0; pass < 2; pass++) {
+        const char *wantKey = pass == 0 ? keySram : keyPlain;
+        int got = InsFreqLoadTableNamed(wantKey, want, out, outMax);
+        if (got > 0) return got;
+    }
+    return 0;
+}
+
+static int InsFreqLoadTableNamed(const char *onlyKey, int want, int *out, int outMax) {
     if (want <= 0 || want > outMax) return 0;
     void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
     if (!iokit) return 0;
@@ -80,9 +92,13 @@ static int InsFreqLoadTable(int want, int *out, int outMax) {
             CFStringRef key = (CFStringRef)keys[i];
             char kbuf[64] = {0};
             if (!CFStringGetCString(key, kbuf, sizeof(kbuf), kCFStringEncodingUTF8)) continue;
-            if (strncmp(kbuf, "voltage-states", 14) != 0) continue;
-            BOOL isSram = strstr(kbuf, "-sram") != NULL;
-            if ((pass == 0) != (BOOL)isSram) continue;
+            if (onlyKey) {
+                if (strcmp(kbuf, onlyKey) != 0) continue;
+            } else {
+                if (strncmp(kbuf, "voltage-states", 14) != 0) continue;
+                BOOL isSram = strstr(kbuf, "-sram") != NULL;
+                if ((pass == 0) != (BOOL)isSram) continue;
+            }
 
             CFDataRef data = (CFDataRef)vals[i];
             if (!data || CFGetTypeID(data) != CFDataGetTypeID()) continue;
@@ -151,8 +167,10 @@ static BOOL InsFreqSetup(void) {
     (void)probeP; (void)probeE;
 
     // 按状态数匹配档位表；失败用 A16 兜底
-    gPCount = InsFreqLoadTable(np, gPTable, FREQ_MAX_STATES);
-    gECount = InsFreqLoadTable(ne, gETable, FREQ_MAX_STATES);
+    gPCount = InsFreqLoadTableByKey(5, np, gPTable, FREQ_MAX_STATES);
+    if (gPCount <= 0) gPCount = InsFreqLoadTable(np, gPTable, FREQ_MAX_STATES);
+    gECount = InsFreqLoadTableByKey(1, ne, gETable, FREQ_MAX_STATES);
+    if (gECount <= 0) gECount = InsFreqLoadTable(ne, gETable, FREQ_MAX_STATES);
     // 取不到表就不上报该簇（设置页显示 "—"），不再用硬编码数值蒙
 
     gReady = YES;
