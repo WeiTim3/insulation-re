@@ -165,8 +165,8 @@ static BOOL InsFreqSetup(void) {
                     CFDataRef raw = CFDictionaryGetValue(c, CFSTR("RawElements"));
                     if (!raw) continue;
                     int cnt = (int)(CFDataGetLength(raw) / 64);
-                    if (cnt > np && cnt >= 8) np = cnt;        // P 核档位多
-                    else if (cnt > ne && cnt < 8) ne = cnt;    // E 核档位少
+                    if (cnt > np) { ne = np; np = cnt; }        // 较大者 = P
+                    else if (cnt > ne && cnt != np) ne = cnt;   // 较小者 = E
                 }
             }
             CFRelease(s0);
@@ -200,7 +200,7 @@ static BOOL InsFreqSetup(void) {
     return YES;
 }
 
-static BOOL InsFreqReadCounters(uint64_t *pOut, uint64_t *eOut) {
+static void InsFreqReadCounters(uint64_t *pOut, uint64_t *eOut, BOOL *gotPOut, BOOL *gotEOut) {
     CFDictionaryRef s = fCreateSamples(gSubRef, gSubbed, NULL);
     if (!s) return NO;
     BOOL gotP = NO, gotE = NO;
@@ -227,7 +227,8 @@ static BOOL InsFreqReadCounters(uint64_t *pOut, uint64_t *eOut) {
         }
     }
     CFRelease(s);
-    return gotP && gotE;
+    if (gotPOut) *gotPOut = gotP;
+    if (gotEOut) *gotEOut = gotE;
 }
 
 static int InsFreqWeighted(const uint64_t *prev, const uint64_t *cur,
@@ -246,7 +247,9 @@ static int InsFreqWeighted(const uint64_t *prev, const uint64_t *cur,
 void InsulationFreqSample(void) {
     if (!InsFreqSetup()) return;
     uint64_t p[FREQ_MAX_STATES] = {0}, e[FREQ_MAX_STATES] = {0};
-    if (!InsFreqReadCounters(p, e)) return;
+    BOOL haveP = NO, haveE = NO;
+    InsFreqReadCounters(p, e, &haveP, &haveE);
+    if (!haveP && !haveE) return;
 
     if (!gHavePrev) {
         memcpy(gPrevP, p, sizeof(uint64_t) * FREQ_MAX_STATES);
@@ -254,13 +257,13 @@ void InsulationFreqSample(void) {
         gHavePrev = YES;
         return;
     }
-    int pm = InsFreqWeighted(gPrevP, p, gPCount, gPTable, gLastP);
-    int em = InsFreqWeighted(gPrevE, e, gECount, gETable, gLastE);
+    int pm = haveP ? InsFreqWeighted(gPrevP, p, gPCount, gPTable, gLastP) : 0;
+    int em = haveE ? InsFreqWeighted(gPrevE, e, gECount, gETable, gLastE) : 0;
     memcpy(gPrevP, p, sizeof(uint64_t) * FREQ_MAX_STATES);
     memcpy(gPrevE, e, sizeof(uint64_t) * FREQ_MAX_STATES);
 
-    if (pm > 0) gLastP = pm;
-    if (em > 0) gLastE = em;
+    if (haveP && pm > 0) gLastP = pm;
+    if (haveE && em > 0) gLastE = em;
     if (gLastP <= 0 && gLastE <= 0) return;
 
     uint64_t state = ((uint64_t)(gLastP & 0xFFFF) << 16) | (uint64_t)(gLastE & 0xFFFF);
